@@ -1,0 +1,39 @@
+========================================================================
+MARUTI SUZUKI SWIFT: 1.2L Z-SERIES ENGINE OVERVIEW
+========================================================================
+
+1. ENGINE ARCHITECTURE & CONFIGURATION
+------------------------------------------------------------------------
+* Engine Type: 1.2-Litre, 3-Cylinder Inline Petrol (Z12E)
+* Power Output: ~80 bhp @ 5700 rpm
+* Peak Torque: 111.7 Nm @ 4300 rpm
+* Valvetrain: Double Overhead Camshaft (DOHC) with 4 Valves per Cylinder
+* Fuel System: Multi-Point Fuel Injection (MPFI) with Dual Jet Technology
+
+2. THE FOUR-STROKE CYCLE IN THE SWIFT
+------------------------------------------------------------------------
+* Intake Stroke: The piston travels downward, creating a vacuum. The 
+  intake valves open, drawing a finely atomized mist of petrol and air 
+  into the cylinder chamber.
+* Compression Stroke: All valves close securely. The piston moves upward,
+  squeezing the air-fuel mixture to a high pressure and optimal 
+  temperature for combustion. Cooled EGR (Exhaust Gas Recirculation) 
+  introduces managed exhaust gases to minimize engine knocking.
+* Power Stroke: The spark plug generates a high-voltage electrical spark.
+  This ignites the compressed mixture, causing a rapid, controlled 
+  expansion of gases that forces the piston violently downward. This 
+  linear force turns the crankshaft into rotational energy.
+* Exhaust Stroke: The exhaust valves open. The piston moves back up, 
+  scavenging and clearing the spent combustion gases out of the 
+  cylinder toward the catalytic converter and exhaust system.
+
+3. EFFICIENCY & PERFORMANCE TECHNOLOGIES
+------------------------------------------------------------------------
+* Dual VVT (Variable Valve Timing): Continuously adjusts the timing of 
+  both intake and exhaust valves dynamically based on engine load, 
+  maximizing fuel economy at lower speeds and power output at higher revs.
+* Idle Stop-Start System: Detects when the vehicle halts at traffic 
+  lights in neutral. It cuts fuel injection to conserve energy and 
+  instantly restarts via an integrated starter generator when the clutch 
+  or brake is applied.
+========================================================================

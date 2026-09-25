@@ -1,0 +1,15 @@
+HOW A CAR ENGINE WORKS (THE BASICS)
+
+Most cars use an Internal Combustion Engine. This means fuel burns inside the engine to create power. 
+
+The heart of the engine is the CYLINDER. Inside the cylinder is a moving part called a PISTON. The piston moves up and down.
+
+Most car engines use a FOUR-STROKE CYCLE. This happens in four quick steps:
+
+1. INTAKE: The piston moves down. A valve opens to let fuel and air into the cylinder.
+2. COMPRESSION: The piston moves back up. It squeezes (compresses) the fuel and air mixture tightly.
+3. POWER: A spark plug creates a tiny spark. This ignites the fuel, causing a small explosion. The force pushes the piston down rapidly. This creates the engine's power.
+4. EXHAUST: The piston moves back up. Another valve opens to let the leftover burned gas out of the engine through the tailpipe.
+
+TURNING UP-AND-DOWN INTO FORWARD MOTION
+As the pistons pump up and down, they turn a heavy rod called the CRANKSHAFT. Think of it like a cyclist's legs turning the pedals of a bicycle. The crankshaft converts the straight up-and-down motion into a spinning motion. This spinning energy is sent to your wheels to make the car move forward.
