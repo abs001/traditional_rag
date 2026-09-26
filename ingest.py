@@ -9,6 +9,12 @@ Scans and ingests all documents (PDFs and Text files) into ChromaDB:
 """
 
 import os
+import sys
+
+# Ensure Windows terminal handles special unicode characters safely
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 import argparse
 from typing import List
 from langchain_core.documents import Document
@@ -120,18 +126,20 @@ def ingest(
         print(f"[i] Resetting existing collection '{collection_name}' before ingestion...")
         vector_store.reset()
 
-    # 5. Generate embeddings in batches
-    texts = [c.page_content for c in chunks]
-    print(f"[i] Generating vector embeddings for {len(texts)} chunks...")
-    embeddings = embedding_mgr.generate_embeddings(texts)
-
-    # 6. Store in ChromaDB
-    print("[i] Saving embeddings and documents to ChromaDB...")
-    vector_store.add_documents(documents=chunks, embeddings=embeddings)
+    # 5. Insert documents (if not already existing, generating embeddings only for new chunks)
+    print(f"[i] Checking ChromaDB and inserting chunks (if not exists)...")
+    stats = vector_store.add_documents_if_not_exists(
+        documents=chunks,
+        embedding_manager=embedding_mgr,
+    )
 
     total_count = vector_store.count()
     print("=" * 70)
-    print(f"[OK] Ingestion complete! Total chunks stored in ChromaDB: {total_count}")
+    print(f"[OK] Ingestion complete!")
+    print(f"     Total checked:  {stats['total_checked']}")
+    print(f"     New inserted:   {stats['inserted']}")
+    print(f"     Skipped exists: {stats['skipped']}")
+    print(f"     Current total chunks in ChromaDB: {total_count}")
     print("=" * 70)
 
 

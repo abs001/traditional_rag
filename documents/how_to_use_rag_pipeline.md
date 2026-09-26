@@ -174,31 +174,112 @@ print(llm_context)
 
 ---
 
-## 5. Ingesting and Updating Documents
+## 5. ChromaDB Data Insertion Flow (Step-by-Step)
 
-A unified ingestion script [ingest.py](file:///h:/AI/traditional_rag/ingest.py) is provided to automatically discover, load, chunk, embed, and store all documents (PDFs and text files) from the `data/` directory into ChromaDB.
+The data insertion flow ensures documents are cleanly parsed, split into semantically coherent passages, deduplicated, vectorized, and indexed into the ChromaDB vector store.
 
-### Automated Ingestion via CLI
-Run the ingestion pipeline anytime you add, modify, or remove files:
-```powershell
-uv run python ingest.py
+### 5.1 Insertion Workflow Architecture
+
+```mermaid
+flowchart TD
+    A["Raw Documents (PDF / TXT)"] --> B["Document Loader (PyMuPDFLoader / TextLoader)"]
+    B --> C["RecursiveCharacterTextSplitter (chunk_size=800, overlap=100)"]
+    C --> D["Generate Deterministic ID (SHA-256: source + page + content)"]
+    D --> E["Query ChromaDB: get_existing_ids(candidate_ids)"]
+    E --> F{"Does Chunk ID already exist in ChromaDB?"}
+    F -- "YES (Duplicate)" --> G["Skip Chunk (No embedding, no duplicate write)"]
+    F -- "NO (New Chunk)" --> H["Compute Embedding (SentenceTransformer: all-MiniLM-L6-v2)"]
+    H --> I["Batch Insert into ChromaDB (collection.add)"]
+    I --> J["ChromaDB Persistent Storage (HNSW Index + SQLite)"]
 ```
 
-#### Available Flags:
-- `--reset`: Clears the collection before ingesting to prevent duplicate chunks (default: enabled).
-- `--no-reset`: Appends new documents without clearing existing stored chunks.
-- `--chunk-size <int>`: Maximum chunk character length (default: `800`).
-- `--chunk-overlap <int>`: Overlap between consecutive chunks (default: `100`).
+### 5.2 Step-by-Step Insertion Breakdown
+
+1. **Document Ingestion & Discovery**:
+   - Scans `data/pdf_files/` for `.pdf` documents using `PyMuPDFLoader` (extracts text and records `page` index and document properties).
+   - Scans `data/text_files/` and `data/` for `.txt` files using `TextLoader` with UTF-8 decoding.
+
+2. **Semantic Text Chunking**:
+   - Long documents are split using `RecursiveCharacterTextSplitter` into chunks of 800 characters with a 100-character overlap.
+   - Preserves sentence boundaries and paragraph structures while keeping metadata (`source`, `page`, `file_name`) attached to each chunk.
+
+3. **Deterministic Chunk Hashing (`generate_deterministic_id`)**:
+   - Rather than assigning volatile random UUIDs, each chunk is assigned a deterministic SHA-256 fingerprint:
+     $$\text{ID} = \text{doc\_\{filename\}\_p\{page\}\_}\{\text{SHA256}(\text{source}::\text{page}::\text{content})[:16]\}$$
+   - This ensures the exact same chunk will **always produce the exact same ID** across multiple ingestion runs.
+
+4. **ChromaDB Existence Check (`collection.get(ids=...)`)**:
+   - Queries the collection with candidate IDs:
+     ```python
+     existing_records = self.collection.get(ids=candidate_ids)
+     existing_ids = set(existing_records.get("ids", []))
+     ```
+   - Separates truly new chunks from already-indexed chunks.
+
+5. **Deduplication & Resource Conservation**:
+   - Chunks already present in ChromaDB are **skipped immediately**.
+   - Vector embedding generation (which is CPU/GPU intensive) is performed **only for new, unindexed chunks**.
+
+6. **Embedding Generation**:
+   - New chunk texts are passed to `EmbeddingManager.generate_embeddings()` (`all-MiniLM-L6-v2`) generating 384-dimensional dense float vectors.
+
+7. **Atomic ChromaDB Persistence**:
+   - The new IDs, embeddings, metadata, and document texts are committed via `collection.add(...)`:
+     ```python
+     self.collection.add(
+         ids=new_ids,
+         documents=new_texts,
+         metadatas=new_metadatas,
+         embeddings=new_embeddings
+     )
+     ```
+   - Automatically flushed to disk at `data/vecor_store/chroma.sqlite3` and the underlying HNSW binary graph index.
+
+---
+
+### 5.3 How to Insert Data If Not Exists
+
+#### Option 1: Automated CLI Ingestion ([ingest.py](file:///h:/AI/traditional_rag/ingest.py))
+Run the unified script. By default with `--no-reset`, it skips chunks that already exist:
 
 ```powershell
-# Example: Ingest with custom chunk size and overlap
-uv run python ingest.py --chunk-size 1000 --chunk-overlap 150
+# Ingest with deduplication (skips existing chunks)
+uv run python ingest.py --no-reset
+
+# Fresh wipe and re-index
+uv run python ingest.py --reset
 ```
 
-### Supported Data Locations:
-1. `data/pdf_files/*.pdf` (Loaded via `PyMuPDFLoader` with page numbers)
-2. `data/text_files/*.txt` (Loaded via `TextLoader`)
-3. `data/*.txt` (Root text files)
+#### Option 2: Programmatic Usage in Python or Notebook
+
+```python
+from retriever import VectorStore, EmbeddingManager
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# 1. Connect to Vector Store
+vector_store = VectorStore(
+    collection_name="pdf_documents",
+    persist_directory="data/vecor_store"
+)
+embedding_mgr = EmbeddingManager(model_name="all-MiniLM-L6-v2")
+
+# 2. Load and split new document
+loader = TextLoader("data/text_files/maruti_suzuki_swift_engine.txt", encoding="utf-8")
+docs = loader.load()
+splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+chunks = splitter.split_documents(docs)
+
+# 3. Insert ONLY if not already present
+stats = vector_store.add_documents_if_not_exists(
+    documents=chunks,
+    embedding_manager=embedding_mgr
+)
+
+print(f"Total Checked: {stats['total_checked']}")
+print(f"New Inserted:  {stats['inserted']}")
+print(f"Skipped Dups:  {stats['skipped']}")
+```
 
 ---
 

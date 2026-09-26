@@ -15,7 +15,8 @@ This module provides:
 
 import os
 import uuid
-from typing import List, Dict, Any, Tuple, Optional
+import hashlib
+from typing import List, Dict, Any, Tuple, Optional, Set
 import numpy as np
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -143,6 +144,123 @@ class VectorStore:
 
         self.collection.add(**add_kwargs)
         print(f"Successfully added {len(documents)} document chunk(s) to collection '{self.collection_name}'.")
+
+    @staticmethod
+    def generate_deterministic_id(doc: Document) -> str:
+        """
+        Generate a unique, deterministic ID for a Document based on source, page, and content.
+        Ensures the same document chunk always produces the exact same ID across runs.
+        """
+        source = str(doc.metadata.get("source", doc.metadata.get("file_name", "unknown")))
+        page = str(doc.metadata.get("page", 0))
+        normalized_content = doc.page_content.strip()
+
+        # Build a unique signature from metadata and content
+        signature = f"{source}::p{page}::{normalized_content}"
+        content_hash = hashlib.sha256(signature.encode("utf-8")).hexdigest()[:16]
+
+        clean_src = os.path.basename(source).replace(" ", "_").replace(".", "_")
+        return f"doc_{clean_src}_p{page}_{content_hash}"
+
+    def get_existing_ids(self, ids: List[str]) -> Set[str]:
+        """Check which of the provided candidate IDs already exist in ChromaDB."""
+        if not ids:
+            return set()
+
+        existing: Set[str] = set()
+        batch_size = 500
+        for i in range(0, len(ids), batch_size):
+            batch = ids[i : i + batch_size]
+            try:
+                records = self.collection.get(ids=batch)
+                if records and records.get("ids"):
+                    existing.update(records["ids"])
+            except Exception as e:
+                print(f"Notice while checking existing IDs: {e}")
+        return existing
+
+    def add_documents_if_not_exists(
+        self,
+        documents: List[Document],
+        embedding_manager: Optional[EmbeddingManager] = None,
+        precomputed_embeddings: Optional[np.ndarray] = None,
+    ) -> Dict[str, int]:
+        """
+        Insert documents into ChromaDB ONLY IF they do not already exist.
+
+        Steps:
+        1. Generates deterministic SHA-256 content IDs for all candidate documents.
+        2. Queries ChromaDB to check which IDs are already stored.
+        3. Filters out already-existing documents (saves time and avoids duplication).
+        4. Computes vector embeddings ONLY for new documents.
+        5. Inserts the new documents into ChromaDB.
+
+        Returns:
+            Dict[str, int]: Summary stats {'total_checked': int, 'inserted': int, 'skipped': int}
+        """
+        if not documents:
+            return {"total_checked": 0, "inserted": 0, "skipped": 0}
+
+        # 1. Generate deterministic IDs for all candidate chunks
+        candidate_ids = [self.generate_deterministic_id(doc) for doc in documents]
+
+        # 2. Check existing IDs in ChromaDB
+        existing_ids = self.get_existing_ids(candidate_ids)
+
+        new_docs: List[Document] = []
+        new_ids: List[str] = []
+        new_texts: List[str] = []
+        new_metadatas: List[Dict[str, Any]] = []
+        new_embeddings: List[List[float]] = []
+
+        # 3. Filter candidates
+        for i, (doc, doc_id) in enumerate(zip(documents, candidate_ids)):
+            if doc_id in existing_ids:
+                continue
+
+            new_docs.append(doc)
+            new_ids.append(doc_id)
+            new_texts.append(doc.page_content)
+
+            clean_meta = {}
+            for k, v in doc.metadata.items():
+                if isinstance(v, (str, int, float, bool)):
+                    clean_meta[k] = v
+                elif v is not None:
+                    clean_meta[k] = str(v)
+            clean_meta["content_length"] = len(doc.page_content)
+            clean_meta["doc_id"] = doc_id
+            new_metadatas.append(clean_meta)
+
+            if precomputed_embeddings is not None:
+                emb = precomputed_embeddings[i]
+                new_embeddings.append(emb.tolist() if isinstance(emb, np.ndarray) else emb)
+
+        skipped_count = len(documents) - len(new_docs)
+
+        # 4. If all documents already exist, skip insertion
+        if not new_docs:
+            print(f"[i] All {len(documents)} document chunk(s) already exist in '{self.collection_name}'. Skipping insertion.")
+            return {"total_checked": len(documents), "inserted": 0, "skipped": skipped_count}
+
+        # 5. Compute embeddings ONLY for new documents if not precomputed
+        if not new_embeddings:
+            if embedding_manager is not None:
+                print(f"[i] Generating embeddings for {len(new_docs)} new chunk(s) (skipped {skipped_count} existing duplicate(s))...")
+                emb_array = embedding_manager.generate_embeddings(new_texts)
+                new_embeddings = [e.tolist() for e in emb_array]
+            else:
+                raise ValueError("Must provide either 'embedding_manager' or 'precomputed_embeddings' to embed new documents.")
+
+        # 6. Insert new records into ChromaDB
+        self.collection.add(
+            ids=new_ids,
+            documents=new_texts,
+            metadatas=new_metadatas,
+            embeddings=new_embeddings,
+        )
+        print(f"[OK] Successfully inserted {len(new_docs)} new chunk(s) into '{self.collection_name}' (skipped {skipped_count} duplicate(s)).")
+        return {"total_checked": len(documents), "inserted": len(new_docs), "skipped": skipped_count}
 
     def reset(self):
         """Clear all documents in the collection to re-index from scratch."""
