@@ -119,6 +119,20 @@ Filter out chunks that fall below a confidence cutoff (0.0 to 1.0):
 .\.venv\Scripts\python.exe main.py --query "How does the starter motor work?" --threshold 0.5
 ```
 
+#### 5. End-to-End LLM Generation (Google Gemini)
+Queries the vector store, creates the grounded prompt, and streams the answer using Gemini:
+```powershell
+uv run python main.py --query "how swift engine works"
+```
+Customizing model, temperature, or retrieval-only mode:
+```powershell
+# Custom model & temperature
+uv run python main.py --query "Explain the compression stroke" --model "gemini-2.5-flash" --temperature 0.1
+
+# Retrieval only without LLM invocation
+uv run python main.py --query "how swift engine works" --no-llm
+```
+
 ---
 
 ### Method B: Python API (`retriever.py`)

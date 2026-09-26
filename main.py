@@ -1,20 +1,144 @@
 """
 main.py
-CLI Demonstration of the Retrieval Functionality in Traditional RAG.
+CLI Demonstration of the Traditional RAG Pipeline:
+1. Retrieval (Similarity search / MMR over ChromaDB)
+2. Prompt Augmentation (Context assembly with strict grounding instructions)
+3. LLM Generation (Google Gemini via langchain-google-genai)
 """
 
-import argparse
+import os
 import sys
+import argparse
+from typing import List, Optional
+from dotenv import load_dotenv
+
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.documents import Document
 from retriever import RAGRetriever, VectorStore, EmbeddingManager
+
+# Load environment variables (.env file)
+load_dotenv()
 
 # Ensure Windows terminal handles special unicode characters safely
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-def run_retrieval(query: str, top_k: int = 3, use_mmr: bool = False, score_threshold: float = None):
+SYSTEM_PROMPT = """You are an expert technical automotive assistant answering questions based on retrieved documentation.
+
+Strict Rules:
+1. Grounding: Answer the question using ONLY the facts explicitly stated in the provided context below. Do NOT assume, extrapolate, or use outside knowledge.
+2. Missing Information: If the context does not contain the answer, explicitly state: "The provided documents do not contain enough information to answer this question."
+3. Citations: Cite your sources for every major claim using the format [Document X, Source: filename, Page: Y] matching the context header.
+4. Tone: Be clear, structured, and technically precise.
+"""
+
+
+def build_rag_prompt(query: str, context_str: str) -> str:
+    """Combines system instructions, retrieved context, and the query into a unified prompt string."""
+    return f"""{SYSTEM_PROMPT}
+
+----------------------------------------
+RETRIEVED CONTEXT:
+----------------------------------------
+{context_str}
+----------------------------------------
+
+USER QUESTION:
+{query}
+
+ANSWER (grounded in context, citing sources):"""
+
+
+def generate_llm_answer(
+    query: str,
+    retrieved_docs: List[Document],
+    retriever: RAGRetriever,
+    model_name: str = "gemini-2.5-flash",
+    temperature: float = 0.2,
+    stream: bool = True,
+) -> Optional[str]:
+    """Generates an answer from Google Gemini using the augmented context."""
+    # 1. Format retrieved documents into context
+    context_str = retriever.format_context(retrieved_docs)
+
+    # 2. Check for Gemini API Key
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("\n" + "=" * 70)
+        print(" [!] NOTICE: GEMINI_API_KEY is not set.")
+        print("=" * 70)
+        print(" To enable LLM generation with Google Gemini:")
+        print("   1. Create a '.env' file in this folder (or copy from .env.example):")
+        print("      GEMINI_API_KEY=your_gemini_api_key_here")
+        print("   2. Get a free API key at: https://aistudio.google.com/app/apikey")
+        print("=" * 70)
+        return None
+
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+    except ImportError:
+        print("[X] Error: langchain-google-genai is not installed. Run: uv add langchain-google-genai")
+        return None
+
+    print("\n" + "=" * 70)
+    print(f" GENERATING LLM RESPONSE (Model: {model_name}) ")
     print("=" * 70)
-    print(" TRADITIONAL RAG - RETRIEVAL SYSTEM ")
+
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=temperature,
+            google_api_key=api_key,
+        )
+
+        user_content = f"Context:\n{context_str}\n\nQuestion: {query}"
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=user_content),
+        ]
+
+        if stream:
+            full_response = []
+            for chunk in llm.stream(messages):
+                token = chunk.content
+                if isinstance(token, str):
+                    print(token, end="", flush=True)
+                    full_response.append(token)
+                elif isinstance(token, list):
+                    for item in token:
+                        if isinstance(item, dict) and "text" in item:
+                            print(item["text"], end="", flush=True)
+                            full_response.append(item["text"])
+                        elif isinstance(item, str):
+                            print(item, end="", flush=True)
+                            full_response.append(item)
+            print("\n")
+            return "".join(full_response)
+        else:
+            response = llm.invoke(messages)
+            answer = response.content
+            print(answer)
+            print()
+            return str(answer)
+
+    except Exception as e:
+        print(f"\n[X] Error during Gemini LLM generation: {e}")
+        return None
+
+
+def run_pipeline(
+    query: str,
+    top_k: int = 3,
+    use_mmr: bool = False,
+    score_threshold: Optional[float] = None,
+    run_llm: bool = True,
+    model_name: str = "gemini-2.5-flash",
+    temperature: float = 0.2,
+    stream: bool = True,
+):
+    print("=" * 70)
+    print(" TRADITIONAL RAG - RETRIEVAL & GENERATION PIPELINE ")
     print("=" * 70)
 
     # 1. Connect to the existing Chroma vector store
@@ -34,7 +158,7 @@ def run_retrieval(query: str, top_k: int = 3, use_mmr: bool = False, score_thres
     print(f"\n[?] Query: '{query}'")
     print(f"[i] Retrieval Mode: {'Maximal Marginal Relevance (MMR)' if use_mmr else 'Similarity Search'}")
     print(f"[i] Top-K: {top_k}")
-    if score_threshold:
+    if score_threshold is not None:
         print(f"[i] Score Threshold: {score_threshold}")
     print("-" * 70)
 
@@ -50,7 +174,7 @@ def run_retrieval(query: str, top_k: int = 3, use_mmr: bool = False, score_thres
         retrieved_docs = [doc for doc, _ in scored_docs]
 
     if not scored_docs:
-        print("No documents found matching the criteria.")
+        print("[!] No documents found matching the search criteria.")
         return
 
     print(f"\n Retrieved {len(scored_docs)} relevant chunk(s):\n")
@@ -71,9 +195,22 @@ def run_retrieval(query: str, top_k: int = 3, use_mmr: bool = False, score_thres
     context_str = retriever.format_context(retrieved_docs)
     print(context_str)
 
+    # 5. LLM Answer Generation
+    if run_llm:
+        generate_llm_answer(
+            query=query,
+            retrieved_docs=retrieved_docs,
+            retriever=retriever,
+            model_name=model_name,
+            temperature=temperature,
+            stream=stream,
+        )
+    else:
+        print("\n[i] LLM generation skipped (--no-llm flag specified).")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Query the Traditional RAG Vector Store")
+    parser = argparse.ArgumentParser(description="Traditional RAG Pipeline: Query Vector Store and Generate Answers with LLM")
     parser.add_argument(
         "--query",
         type=str,
@@ -97,13 +234,39 @@ def main():
         default=None,
         help="Minimum similarity score threshold (0.0 to 1.0)"
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="gemini-2.5-flash",
+        help="Google Gemini model name (default: gemini-2.5-flash)"
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.2,
+        help="LLM sampling temperature (default: 0.2 for factual RAG)"
+    )
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip LLM generation and only run retrieval and context formatting"
+    )
+    parser.add_argument(
+        "--no-stream",
+        action="store_true",
+        help="Disable streaming output for LLM generation"
+    )
 
     args = parser.parse_args()
-    run_retrieval(
+    run_pipeline(
         query=args.query,
         top_k=args.top_k,
         use_mmr=args.mmr,
-        score_threshold=args.threshold
+        score_threshold=args.threshold,
+        run_llm=not args.no_llm,
+        model_name=args.model,
+        temperature=args.temperature,
+        stream=not args.no_stream,
     )
 
 
