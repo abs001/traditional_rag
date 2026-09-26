@@ -54,7 +54,7 @@ def generate_llm_answer(
     query: str,
     retrieved_docs: List[Document],
     retriever: RAGRetriever,
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3.8-flash",
     temperature: float = 0.2,
     stream: bool = True,
 ) -> Optional[str]:
@@ -133,7 +133,7 @@ def run_pipeline(
     use_mmr: bool = False,
     score_threshold: Optional[float] = None,
     run_llm: bool = True,
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3.8-flash",
     temperature: float = 0.2,
     stream: bool = True,
 ):
@@ -237,8 +237,8 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="gemini-2.5-flash",
-        help="Google Gemini model name (default: gemini-2.5-flash)"
+        default="gemini-3.8-flash",
+        help="Google Gemini model name (default: gemini-3.8-flash)"
     )
     parser.add_argument(
         "--temperature",
