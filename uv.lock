@@ -3648,6 +3648,7 @@ dependencies = [
     { name = "langchain-core" },
     { name = "pymupdf" },
     { name = "pypdf" },
+    { name = "scikit-learn" },
     { name = "sentence-transformers" },
 ]
 
@@ -3661,6 +3662,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.6.5" },
     { name = "pymupdf", specifier = ">=1.28.2" },
     { name = "pypdf", specifier = ">=6.19.0" },
+    { name = "scikit-learn", specifier = ">=1.9.1" },
     { name = "sentence-transformers", specifier = ">=6.1.0" },
 ]
 

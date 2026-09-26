@@ -8,3 +8,4 @@ ipykernel<7
 sentence-transformers
 faiss-cpu
 chromadb
+scikit-learn
